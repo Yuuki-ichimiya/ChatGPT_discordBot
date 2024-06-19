@@ -10,12 +10,13 @@ import math
 
 load_dotenv()
 
+
 class ChatGPTDiscordBot:
-    def __init__(self, api_key, model, token, command_prefix="/", max_messages=6):
+    def __init__(self, api_key, model, token, command_prefix="/", max_messages=20):
         self.client = OpenAI(api_key=api_key)
         self.model = model
         self.tokenizer = tiktoken.encoding_for_model(model)
-        self.conversation_history = [
+        self.conversationHistory = [
             {
                 "role": "system",
                 "content": "あなたはAIアシスタントです"
@@ -33,39 +34,44 @@ class ChatGPTDiscordBot:
     async def on_ready(self):
         print(f'Logged in as {self.bot.user.name} (ID: {self.bot.user.id})')
 
-    async def on_message(self, message):
-        if message.author.bot:
+    async def on_message(self, userMessage):
+        if userMessage.author.bot:
             return  # Botからのメッセージは無視する
 
-        base64_image = None
-        if len(self.conversation_history) == self.max_messages:
-            del self.conversation_history[0]
+        # 最大入力数を超えないように履歴の一番古いものから削除
+        while len(self.conversationHistory) > self.max_messages:
+            del self.conversationHistory[0]
 
-        print("***********************************************")
-        print(f"Message from {message.author}: {message.content}")
+        # print("***********************************************")
+        # print(f"Message from {userMessage.author}: {userMessage.content}")
 
-        if message.attachments:
-            for attachment in message.attachments:
+        if userMessage.attachments:
+            base64_image = None
+            for attachment in userMessage.attachments:
                 base64_image = self.get_image_base64(attachment.url)
-                print(f"Attachment: {attachment.url}")
-        print("***********************************************")
-
-        user_message_content = [{"type": "text", "text": message.content}]
-        if base64_image:
-            user_message_content.append(
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                # print(f"Attachment: {attachment.url}")
+                userMessageJSON = [
+                    {"type": "text", "text": userMessage.content}]
+                if base64_image:
+                    userMessageJSON.append(
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"}}
+                    )
+                    self.conversationHistory.append(
+                        {"role": "user", "content": userMessageJSON}
+                    )
+        else:
+            self.conversationHistory.append(
+                {"role": "user", "content": userMessage.content}
             )
 
-        self.conversation_history.append(
-            {"role": "user", "content": user_message_content}
-        )
-
         chatbot_response = self.client.chat.completions.create(
-            model=self.model, messages=self.conversation_history
+            model=self.model, messages=self.conversationHistory
         )
         output_assistant_response = chatbot_response.choices[0].message.content
 
-        self.conversation_history.append(
+        # ChatGPTからの返答を履歴に追加
+        self.conversationHistory.append(
             {
                 "role": "assistant",
                 "content": [{"type": "text", "text": output_assistant_response}]
@@ -75,9 +81,9 @@ class ChatGPTDiscordBot:
         num = math.ceil(len(output_assistant_response) / 2000)
         for i in range(num):
             if i == num - 1:
-                await message.reply(output_assistant_response[2000*i:])
+                await userMessage.reply(output_assistant_response[2000*i:])
             else:
-                await message.reply(output_assistant_response[2000*i:2000*(i+1)])
+                await userMessage.reply(output_assistant_response[2000*i:2000*(i+1)])
 
     def get_image_base64(self, image_url):
         response = requests.get(image_url)
@@ -94,6 +100,7 @@ class ChatGPTDiscordBot:
             self.bot.run(os.getenv('TOKEN'))
         except:
             os.system("kill")
+
 
 if __name__ == "__main__":
     bot = ChatGPTDiscordBot(
